@@ -1,0 +1,245 @@
+#!/bin/bash
+
+set -uf -o pipefail
+
+################################################################################
+# LICENSE
+#
+# This software is released under the Revised BSD License.
+# 
+# Copyright (c) 2015, Ryan Chapin, http:www.ryanchapin.com         
+# All rights reserved.                     
+#                                                                     
+# Redistribution  and  use  in  source  and binary forms, with or
+# without modification, are permitted provided that the following
+# conditions are met:
+#                                                                     
+# *   Redistributions  of  source  code  must  retain  the  above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer.
+# 
+# *  Redistributions  in  binary  form  must  reproduce the above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer  in the documentation andor other materials provided
+# with the distribution.
+# 
+# *  Neither  the  name  of  Ryan  Chapin  nor  the  names of its
+# contributors may be used to endorse or promote products derived
+# from this software without specific prior written permission.
+#                                                                     
+# THIS   SOFTWARE  IS  PROVIDED  BY  THE  COPYRIGHT  HOLDERS  AND
+# CONTRIBUTORS  "AS  IS"  AND  ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING,  BUT  NOT  LIMITED  TO,  THE  IMPLIED  WARRANTIES OF
+# MERCHANTABILITY  AND  FITNESS  FOR  A  PARTICULAR  PURPOSE  ARE
+# DISCLAIMED.   IN   NO  EVENT  SHALL  RYAN  CHAPIN,  ANY  HEIRS,
+# SUCCESSORS,  EXECUTORS AND OR ASSIGNS BE LIABLE FOR ANY DIRECT,
+# INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY,  OR  CONSEQUENTIAL
+# DAMAGES   (INCLUDING,   BUT  NOT  LIMITED  TO,  PROCUREMENT  OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS  INTERRUPTION)  HOWEVER  CAUSED  AND  ON ANY THEORY OF
+# LIABILITY,  WHETHER  IN  CONTRACT,  STRICT  LIABILITY,  OR TORT
+# (INCLUDING  NEGLIGENCE  OR OTHERWISE) ARISING IN ANY WAY OUT OF
+# THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+################################################################################
+#
+# Script for starting and stopping the hdfs services in the Cloudera Hadoop
+# distribution for pseudo-distributed mode.
+#
+# name:     hdfs-services
+# author:   Ryan Chapin <http://www.ryanchapin.com/contact.html>
+# created:  2013-03-25
+# modified: 2015-10-21
+# 
+################################################################################
+# EXIT CODES:
+#
+# 1 : Invalid -c command argument 
+# 2 : init script execution failed
+#
+################################################################################
+# USAGE:
+
+function about {
+  cat << EOF
+$ME - start|stop|status for hdfs daemons in a Cloudera pseudo-distributed
+           installation.  Must be run as root.  Currently supports
+           CDH 4 and CDH 5 up to CDH 5.4.7.
+EOF
+}
+
+function usage {
+  cat << EOF
+Usage: $ME [OPTIONS] -c [start|stop|status]
+
+  -c init script command to execute
+
+Options:
+  -h HELP
+    Outputs this basic usage information.
+
+  -s SILENT
+    Silence all STDOUT from each init script
+
+  --more-help EXTENDED HELP
+    Extended help and documentation.
+EOF
+}
+
+function extended_usage {
+cat << EOF
+Extended Usage:
+
+  This script will execute the command argument for each of the following
+  hadoop-hdfs init scripts:
+
+  ${INIT_SCRIPTS_ARRAY[*]}
+
+Example:
+
+  # $ME -c start
+
+  Will start all of the hdfs-service daemons.
+EOF
+}
+
+################################################################################
+# FUNCTIONS:
+
+function output_msg {
+  if [ "$SILENT" -eq 0 ];
+  then
+    echo "$1"
+  fi
+}
+
+################################################################################
+# CONFIGURATIONS:
+
+ME="$(basename $0)"
+
+#
+# location of init.d directory
+#
+INITD_PATH=/etc/init.d
+
+#
+# array of init scripts/services to invoke
+#
+declare -a INIT_SCRIPTS_ARRAY=( hadoop-hdfs-namenode \
+      hadoop-hdfs-secondarynamenode\ 
+      hadoop-hdfs-datanode )
+
+################################################################################
+#
+# Here we define variables to store the input from the command line arguments as
+# well as define the default values.
+#
+HELP=0
+SILENT=0
+MORE_HELP=0
+CMD_ARG=""
+
+PARSED_OPTIONS=`getopt -o hsc: -l more-help -- "$@"`
+
+# Check to see if the getopts command failed
+if [ $? -ne 0 ];
+then
+  echo "Failed to parse arguments"
+  exit 1
+fi
+
+eval set -- "$PARSED_OPTIONS"
+
+# Loop through all of the options with a case statement
+while true; do
+  case "$1" in
+    -h)
+      HELP=1
+      shift
+      ;;
+
+    -s)
+      SILENT=1
+      shift
+      ;;
+
+    -c)
+      CMD_ARG=$2
+      shift 2
+      ;;
+
+    --more-help)
+      MORE_HELP=1
+      shift
+      ;;
+
+    --)
+      shift
+      break
+      ;;
+  esac
+done
+
+if [ "$MORE_HELP" -eq 1 ];
+then
+  about
+  echo ""
+  usage
+  echo ""
+  extended_usage
+  exit
+fi
+
+if [ "$HELP" -eq 1 ];
+then
+  usage
+  exit
+fi
+
+###############################################################################
+
+case "$CMD_ARG" in
+  start)
+    ;;
+  stop)
+    ;;
+  status)
+    ;;
+  *)
+    output_msg "invalid command option [$CMD_ARG] provided"
+    output_msg "$(usage)"
+    output_msg "exiting...."
+    exit 1
+    ;;
+esac
+
+output_msg "executing the following command for HDFS daemons: [${CMD_ARG}]"
+
+#
+# loop through the INIT_SCRIPTS_ARRAY and invoke the CMD_ARG on each of
+# the services
+#
+for i in "${INIT_SCRIPTS_ARRAY[@]}"
+do
+  CMD="service $i ${CMD_ARG}"
+
+  if [ "$SILENT" -eq 1 ]
+  then
+    CMD="$CMD > /dev/null 2>&1"
+  fi
+
+  # echo "$CMD"
+  eval $CMD
+
+  RETVAL="$?"
+
+  if [ "$RETVAL" -ne "0" ] && [ "$CMD_ARG" != "status" ]
+  then
+    output_msg "init script execution failed with return code $RETVAL"
+    output_msg "exiting..."
+    exit 2
+  fi
+done
+
