@@ -1,0 +1,85 @@
+#!/bin/bash
+
+set -o errexit
+set -o noglob
+set -o nounset
+set -o pipefail
+
+################################################################################
+# LICENSE
+#
+# This software is released under the Revised BSD License.
+# 
+# Copyright (c) 2015, Ryan Chapin, http:www.ryanchapin.com         
+# All rights reserved.                     
+#                                                                     
+# Redistribution  and  use  in  source  and binary forms, with or
+# without modification, are permitted provided that the following
+# conditions are met:
+#                                                                     
+# *   Redistributions  of  source  code  must  retain  the  above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer.
+# 
+# *  Redistributions  in  binary  form  must  reproduce the above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer  in the documentation andor other materials provided
+# with the distribution.
+# 
+# *  Neither  the  name  of  Ryan  Chapin  nor  the  names of its
+# contributors may be used to endorse or promote products derived
+# from this software without specific prior written permission.
+#                                                                     
+# THIS   SOFTWARE  IS  PROVIDED  BY  THE  COPYRIGHT  HOLDERS  AND
+# CONTRIBUTORS  "AS  IS"  AND  ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING,  BUT  NOT  LIMITED  TO,  THE  IMPLIED  WARRANTIES OF
+# MERCHANTABILITY  AND  FITNESS  FOR  A  PARTICULAR  PURPOSE  ARE
+# DISCLAIMED.   IN   NO  EVENT  SHALL  RYAN  CHAPIN,  ANY  HEIRS,
+# SUCCESSORS,  EXECUTORS AND OR ASSIGNS BE LIABLE FOR ANY DIRECT,
+# INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY,  OR  CONSEQUENTIAL
+# DAMAGES   (INCLUDING,   BUT  NOT  LIMITED  TO,  PROCUREMENT  OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS  INTERRUPTION)  HOWEVER  CAUSED  AND  ON ANY THEORY OF
+# LIABILITY,  WHETHER  IN  CONTRACT,  STRICT  LIABILITY,  OR TORT
+# (INCLUDING  NEGLIGENCE  OR OTHERWISE) ARISING IN ANY WAY OUT OF
+# THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+################################################################################
+#
+# Configuration script for the version of MR installed.
+#
+# name:     mr-version
+# author:   Ryan Chapin <http://www.ryanchapin.com/contact.html>
+# created:  2013-03-25
+# modified: 2015-10-21
+#
+################################################################################
+#
+# The version of MapReduce being run on this system
+# [MRv1|MRv2]
+#
+MR_VERSION=MRv2
+
+#
+# List of mr service init scripts based on version
+#
+declare -a MR_INIT_SCRIPTS=()
+
+
+case $MR_VERSION in
+  MRv1* )
+    MR_INIT_SCRIPTS+=( 'hadoop-0.20-mapreduce-jobtracker' \
+                       'hadoop-0.20-mapreduce-tasktracker' )
+    ;;
+  MRv2* )
+    MR_INIT_SCRIPTS+=( 'hadoop-yarn-resourcemanager' \
+                       'hadoop-yarn-nodemanager' \
+                       'hadoop-mapreduce-historyserver' )
+    ;;
+  * )
+    echo "$MR_VERSION is not set, exiting"
+    exit 1
+    ;;
+esac
+

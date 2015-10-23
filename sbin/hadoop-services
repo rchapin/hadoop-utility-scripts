@@ -1,6 +1,9 @@
 #!/bin/bash
 
-set -uf -o pipefail
+set -o errexit
+set -o noglob
+set -o nounset
+set -o pipefail
 
 ################################################################################
 # LICENSE
@@ -44,10 +47,10 @@ set -uf -o pipefail
 #
 ################################################################################
 #
-# Script for starting and stopping the hdfs services in the Cloudera Hadoop
+# Script for starting and stopping hadoop services in the Cloudera Hadoop
 # distribution for pseudo-distributed mode.
 #
-# name:     hdfs-services
+# name:     hadoop-services
 # author:   Ryan Chapin <http://www.ryanchapin.com/contact.html>
 # created:  2013-03-25
 # modified: 2015-10-21
@@ -56,24 +59,30 @@ set -uf -o pipefail
 # EXIT CODES:
 #
 # 1 : Invalid -c command argument 
-# 2 : init script execution failed
+# 2 : Invalid -d command argument
+# 3 : init script execution failed
 #
 ################################################################################
 # USAGE:
 
 function about {
   cat << EOF
-$ME - start|stop|status for hdfs daemons in a Cloudera pseudo-distributed
-           installation.  Must be run as root.  Currently supports
-           CDH 4 and CDH 5 up to CDH 5.4.7.
+$ME - start|stop|status for hadoop service daemons, grouped  by  the
+                  type of service in a Cloudera pseudo-distributed installation.
+                  Must be run as root.  Currently supports  CDH 4 and above.
+
+                  Services supported: hdfs-services,  mapreduce  services  (MRv1
+                  and MRv2)
 EOF
 }
 
 function usage {
   cat << EOF
-Usage: $ME [OPTIONS] -c [start|stop|status]
+Usage: $ME [OPTIONS] -d [daemon-group] -c [init-command]
 
-  -c init script command to execute
+  -d daemon-group [hdfs|mr]
+
+  -c init script command to execute [start|stop|status]
 
 Options:
   -h HELP
@@ -92,27 +101,27 @@ cat << EOF
 Extended Usage:
 
   This script will execute the command argument for each of the following
-  hadoop-hdfs init scripts:
+  hadoop service init scripts:
 
-  ${INIT_SCRIPTS_ARRAY[*]}
+  hdfs:
+  ${HDFS_INIT_SCRIPTS[*]}
+
+  mapreduce:
+  ${MR_INIT_SCRIPTS[*]}
 
 Example:
 
-  # $ME -c start
-
+  # $ME -d hdfs -c start
   Will start all of the hdfs-service daemons.
+
+  # $ME -d mr -c stop -s
+  Will stop all of the mapreduce daemons surpressing and STDOUT or STDERR
 EOF
 }
 
 ################################################################################
-# FUNCTIONS:
 
-function output_msg {
-  if [ "$SILENT" -eq 0 ];
-  then
-    echo "$1"
-  fi
-}
+source $(which hadoop-utility-functions)
 
 ################################################################################
 # CONFIGURATIONS:
@@ -125,11 +134,17 @@ ME="$(basename $0)"
 INITD_PATH=/etc/init.d
 
 #
-# array of init scripts/services to invoke
+# array of hdfs init scripts/services to invoke
 #
-declare -a INIT_SCRIPTS_ARRAY=( hadoop-hdfs-namenode \
+declare -a HDFS_INIT_SCRIPTS=( hadoop-hdfs-namenode \
       hadoop-hdfs-secondarynamenode\ 
       hadoop-hdfs-datanode )
+
+#
+# pull in the version of MR that we are running along with the array of
+# mapreduce init scripts
+#
+source $(which mr-version)
 
 ################################################################################
 #
@@ -139,9 +154,10 @@ declare -a INIT_SCRIPTS_ARRAY=( hadoop-hdfs-namenode \
 HELP=0
 SILENT=0
 MORE_HELP=0
+DAEMON_GROUP=""
 CMD_ARG=""
 
-PARSED_OPTIONS=`getopt -o hsc: -l more-help -- "$@"`
+PARSED_OPTIONS=`getopt -o hsc:d: -l more-help -- "$@"`
 
 # Check to see if the getopts command failed
 if [ $? -ne 0 ];
@@ -163,6 +179,11 @@ while true; do
     -s)
       SILENT=1
       shift
+      ;;
+
+    -d)
+      DAEMON_GROUP=$2
+      shift 2
       ;;
 
     -c)
@@ -215,13 +236,38 @@ case "$CMD_ARG" in
     ;;
 esac
 
-output_msg "executing the following command for HDFS daemons: [${CMD_ARG}]"
+#
+# 'Point' the array that we will loop through to the correct set of init
+# scripts based on the -d arg
+#
+case "$DAEMON_GROUP" in
+  hdfs)
+    declare -a INIT_SCRIPTS=(${HDFS_INIT_SCRIPTS[*]})
+    ;;
+  mr)
+    declare -a INIT_SCRIPTS=(${MR_INIT_SCRIPTS[*]})
+    ;;
+  *)
+    output_msg "invalid daemon-group option [$DAEMON_GROUP] provided"
+    output_msg "$(usage)"
+    output_msg "exiting...."
+    exit 2
+    ;;
+esac
+
+output_msg "executing the [${CMD_ARG}] command for [${DAEMON_GROUP}] daemons"
 
 #
-# loop through the INIT_SCRIPTS_ARRAY and invoke the CMD_ARG on each of
+# Turn off errexit so that we can simply report a failure of one of the
+# commands instead of it forcing an exit.
+#
+set +o errexit
+
+#
+# loop through the INIT_SCRIPTS and invoke the CMD_ARG on each of
 # the services
 #
-for i in "${INIT_SCRIPTS_ARRAY[@]}"
+for i in "${INIT_SCRIPTS[@]}"
 do
   CMD="service $i ${CMD_ARG}"
 
@@ -239,7 +285,7 @@ do
   then
     output_msg "init script execution failed with return code $RETVAL"
     output_msg "exiting..."
-    exit 2
+    exit 3 
   fi
 done
 
