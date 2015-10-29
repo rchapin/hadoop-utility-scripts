@@ -1,0 +1,408 @@
+#!/bin/bash
+
+set -o errexit
+set -o noglob
+set -o nounset
+set -o pipefail
+
+################################################################################
+# LICENSE
+#
+# This software is released under the Revised BSD License.
+# 
+# Copyright (c) 2015, Ryan Chapin, http:www.ryanchapin.com         
+# All rights reserved.                     
+#                                                                     
+# Redistribution  and  use  in  source  and binary forms, with or
+# without modification, are permitted provided that the following
+# conditions are met:
+#                                                                     
+# *   Redistributions  of  source  code  must  retain  the  above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer.
+# 
+# *  Redistributions  in  binary  form  must  reproduce the above
+# copyright  notice,  this  list  of conditions and the following
+# disclaimer  in the documentation andor other materials provided
+# with the distribution.
+# 
+# *  Neither  the  name  of  Ryan  Chapin  nor  the  names of its
+# contributors may be used to endorse or promote products derived
+# from this software without specific prior written permission.
+#                                                                     
+# THIS   SOFTWARE  IS  PROVIDED  BY  THE  COPYRIGHT  HOLDERS  AND
+# CONTRIBUTORS  "AS  IS"  AND  ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING,  BUT  NOT  LIMITED  TO,  THE  IMPLIED  WARRANTIES OF
+# MERCHANTABILITY  AND  FITNESS  FOR  A  PARTICULAR  PURPOSE  ARE
+# DISCLAIMED.   IN   NO  EVENT  SHALL  RYAN  CHAPIN,  ANY  HEIRS,
+# SUCCESSORS,  EXECUTORS AND OR ASSIGNS BE LIABLE FOR ANY DIRECT,
+# INDIRECT,  INCIDENTAL,  SPECIAL,  EXEMPLARY,  OR  CONSEQUENTIAL
+# DAMAGES   (INCLUDING,   BUT  NOT  LIMITED  TO,  PROCUREMENT  OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS  INTERRUPTION)  HOWEVER  CAUSED  AND  ON ANY THEORY OF
+# LIABILITY,  WHETHER  IN  CONTRACT,  STRICT  LIABILITY,  OR TORT
+# (INCLUDING  NEGLIGENCE  OR OTHERWISE) ARISING IN ANY WAY OUT OF
+# THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+################################################################################
+#
+# Script for reformatting and setting up default set of HDFS directories in a
+# Cloudera distro for a pseudo-distributed mode.
+#
+# The hadoop-services and mr-version script must be in the path.
+#
+# name:     hdfs-reformat
+# author:   Ryan Chapin
+# created:  2013-03-25
+# modified: 2015-10-28
+#
+################################################################################
+# EXIT CODES:
+#
+# 1 : Failed to parse arguments
+# 2 : Invalid response to confirmation for formatting
+# 3 : Illegal argument combination.
+# 4 : mr-version is not set correctly.  Check the mr-version script.
+#
+################################################################################
+# USAGE:
+
+function about {
+  cat << EOF
+$ME - format/reformat  local  hdfs  in  a  Cloudera   pseudo-distributed
+              installation.  Must be run as root.  Currently supports  CDH 4 and
+              above.
+EOF
+}
+
+function usage {
+  cat << EOF
+Usage: $ME [OPTIONS]
+
+Options:
+
+  --force FORCE_WITHOUT_PROMPT
+    Automatically reformat without prompting for confirmation.  Running in this
+    mode will preclude the option of creating non-root user 'home' dir on hdfs.
+
+  -h HELP
+    Outputs this basic usage information.
+
+  -s SILENT
+    Silence all STDOUT from each init script
+
+  --more-help EXTENDED HELP
+    Extended help and documentation.
+EOF
+}
+
+function extended_usage {
+cat << EOF
+Extended Usage:
+
+  Will reformat the local hdfs file system and optionally allow for the creation
+  of non-root user 'home' directories on HDFS.
+
+  When prompted as to whether or not to create a non-root user account,  if  the
+  name of the user-id input is  'rchapin', the script will create  the following
+  directory on hdfs: /user/rchapin, and set the permissions for the user of that
+  same name.
+
+Example:
+
+  # $ME
+  Will prompt for confirmation to reformat hdfs
+
+  # $ME --force -s
+  Will not prompt for confirmation to reformat hdfs and will surpress all STDOUT
+  and STDERR
+EOF
+}
+
+################################################################################
+
+source $(which hadoop-utility-functions)
+
+################################################################################
+# CONFIGURATIONS:
+
+ME="$(basename $0)"
+
+#
+# pull in the version of MR_VERSION config
+#
+source $(which mr-version)
+
+#
+# user that should be running the hadoop commands
+#
+HADOOP_USER=hdfs
+
+#
+# Data node data directory:
+#
+DN_DATA_DIR=/var/lib/hadoop-hdfs/cache/hdfs/dfs/data
+
+#
+# Name node data directory:
+#
+NN_DATA_DIR=/var/lib/hadoop-hdfs/cache/hdfs/dfs/name
+
+#
+# Secondary node data directory:
+#
+SN_DATA_DIR=/var/lib/hadoop-hdfs/cache/hdfs/dfs/namesecondary
+
+################################################################################
+#
+# Here we define variables to store the input from the command line arguments as
+# well as define the default values.
+#
+HELP=0
+SILENT=0
+MORE_HELP=0
+FORCE_WITHOUT_PROMPT=0
+
+PARSED_OPTIONS=`getopt -o hs -l more-help,force -- "$@"`
+
+# Check to see if the getopts command failed
+if [ $? -ne 0 ];
+then
+  output_msg "Failed to parse arguments"
+  exit 1
+fi
+
+eval set -- "$PARSED_OPTIONS"
+
+# Loop through all of the options with a case statement
+while true; do
+  case "$1" in
+    -h)
+      HELP=1
+      shift
+      ;;
+
+    -s)
+      SILENT=1
+      shift
+      ;;
+
+    --force)
+      FORCE_WITHOUT_PROMPT=1
+      shift
+      ;;
+
+    --more-help)
+      MORE_HELP=1
+      shift
+      ;;
+
+    --)
+      shift
+      break
+      ;;
+  esac
+done
+
+
+if [ "$MORE_HELP" -eq 1 ];
+then
+  about
+  echo ""
+  usage
+  echo ""
+  extended_usage
+  exit
+fi
+
+if [ "$HELP" -eq 1 ];
+then
+  usage
+  exit
+fi
+
+output_msg "FORCE_WITHOUT_PROMPT = $FORCE_WITHOUT_PROMPT"
+output_msg "SILENT = $SILENT"
+
+###############################################################################
+
+#
+# The --force option exists only to enable the use of the -s (silent) option
+# if -s is set, then --force must be, or we have no way of prompting the user
+#
+if [ "$SILENT" -eq "1" ] && [ "$FORCE_WITHOUT_PROMPT" -eq "0" ]
+then
+echo "foo"
+  SILENT=0
+  output_msg "-s [silent] was set without --force.  Since there will not \
+be any STDOUT to prompt the user for confirmation, this constitutes \
+an invalid state.  Exiting...."
+  usage
+  exit 3 
+fi
+
+
+if [ "$FORCE_WITHOUT_PROMPT" -eq "0" ]
+then
+  read -p "Are you sure that you want to reformat HDFS? [Y|N] " FORMAT
+
+  case $FORMAT in
+    [Yy]* )
+      output_msg "Reformatting HDFS . . . "
+      ;;
+    [Nn]* )
+      output_msg "Not reformatting HDFS, exiting . . . "
+      exit
+      ;;
+    * )
+      output_msg "Invalid confirmation string.  Not reformatting HDFS, exiting . . . "
+      exit 2
+      ;;
+  esac
+fi
+
+#
+# First make sure that MR and HDFS services have been shutdown
+#
+declare -a DAEMONS=("mr" "hdfs")
+for DAEMON in "${DAEMONS[@]}"
+do
+  STOP_CMD="hadoop-services -d $DAEMON -c stop"
+
+  # Add -s if we are supressing STDOUT and STDERR
+  if [ "$SILENT" -eq "1" ]
+  then
+    STOP_CMD="$STOP_CMD -s"
+  fi
+
+  eval $STOP_CMD
+
+done
+
+#
+# To prevent the following error:
+#
+#  FATAL org.apache.hadoop.hdfs.server.datanode.DataNode: Initialization failed for block pool Block pool BP-1101722467-127.0.1.1-1364243857937 (storage id DS-9853888-127.0.1.1-50010-1364225431442) service to localhost/127.0.0.1:8020
+# java.io.IOException: Incompatible clusterIDs in /var/lib/hadoop-hdfs/cache/hdfs/dfs/data: namenode clusterID = CID-2605a613-f750-40dd-9e25-581964697f66; datanode clusterID = CID-a964b4f1-c400-4a7d-89a4-77bec70bcb05
+#         at org.apache.hadoop.hdfs.server.datanode.DataStorage.doTransition(DataStorage.java:391)
+#         at org.apache.hadoop.hdfs.server.datanode.DataStorage.recoverTransitionRead(DataStorage.java:191)
+#         at org.apache.hadoop.hdfs.server.datanode.DataStorage.recoverTransitionRead(DataStorage.java:219)
+#         at org.apache.hadoop.hdfs.server.datanode.DataNode.initStorage(DataNode.java:906)
+#         at org.apache.hadoop.hdfs.server.datanode.DataNode.initBlockPool(DataNode.java:877)
+#         at org.apache.hadoop.hdfs.server.datanode.BPOfferService.verifyAndSetNamespaceInfo(BPOfferService.java:308)
+#         at org.apache.hadoop.hdfs.server.datanode.BPServiceActor.connectToNNAndHandshake(BPServiceActor.java:218)
+#         at org.apache.hadoop.hdfs.server.datanode.BPServiceActor.run(BPServiceActor.java:660)
+#         at java.lang.Thread.run(Thread.java:679)
+#
+# Delete and recreate the data directory for the name, secondary, and data node
+#
+output_msg "Deleting and recreating hdfs data directories...."
+rm -rf $DN_DATA_DIR $SN_DATA_DIR $NN_DATA_DIR
+mkdir $DN_DATA_DIR $SN_DATA_DIR $NN_DATA_DIR
+
+chown hdfs: $DN_DATA_DIR $SN_DATA_DIR $NN_DATA_DIR
+chmod 775 $DN_DATA_DIR $SN_DATA_DIR $NN_DATA_DIR
+
+#
+# Reformat HDFS
+#
+sudo -u ${HADOOP_USER} hdfs namenode -format
+
+#
+# Start up hdfs-services
+#
+hadoop-services -d hdfs -c start
+
+#
+# Prepopulate the HDFS with the proper directory structure and permissions
+#
+
+#
+# Create /tmp dir
+#
+sudo -u ${HADOOP_USER} hadoop fs -rm -f -r /tmp
+sudo -u ${HADOOP_USER} hadoop fs -mkdir /tmp
+sudo -u ${HADOOP_USER} hadoop fs -chmod -R 1777 /tmp
+
+case $MR_VERSION in
+  MRv1* )
+    #
+    # Create /var/lib tree
+    #
+    sudo -u ${HADOOP_USER} hadoop fs -mkdir -p /var/lib/hadoop-hdfs/cache/mapred/mapred/staging
+    sudo -u ${HADOOP_USER} hadoop fs -chmod -R 755 /var
+    sudo -u ${HADOOP_USER} hadoop fs -chown -R mapred /var/lib/hadoop-hdfs/cache/mapred
+    sudo -u ${HADOOP_USER} hadoop fs -chmod -R 755 /var/lib/hadoop-hdfs/cache/mapred
+    sudo -u ${HADOOP_USER} hadoop fs -chmod -R 1777 /var/lib/hadoop-hdfs/cache/mapred/mapred/staging
+    ;;
+
+  MRv2* )
+    #
+    # Create staging, log, and intermediary directories
+    #
+    sudo -u ${HADOOP_USER} hadoop fs -mkdir -p /tmp/hadoop-yarn/staging
+    sudo -u ${HADOOP_USER} hadoop fs -chmod -R 1777 /tmp/hadoop-yarn/staging
+    sudo -u ${HADOOP_USER} hadoop fs -mkdir -p /tmp/hadoop-yarn/staging/history/done_intermediate
+    sudo -u ${HADOOP_USER} hadoop fs -chmod -R 1777 /tmp/hadoop-yarn/staging/history/done_intermediate
+    sudo -u ${HADOOP_USER} hadoop fs -chown -R mapred:mapred /tmp/hadoop-yarn/staging
+    
+    #
+    # Create the /var/log/hadoop-yarn directory and set ownership:
+    #
+    sudo -u ${HADOOP_USER} hadoop fs -mkdir -p /var/log/hadoop-yarn
+    sudo -u ${HADOOP_USER} hadoop fs -chown yarn:mapred /var/log/hadoop-yarn
+    sudo -u ${HADOOP_USER} hadoop fs -mkdir /user
+    ;;
+
+    * )
+      echo "$MR_VERSION is not set, exiting"
+      exit 4
+      ;;
+esac
+
+
+echo "The following HDFS directory structure has been created:"
+sudo -u ${HADOOP_USER} hadoop fs -ls -R /
+
+
+#
+# Does the user want to create a user directory on HDFS?
+#
+CREATE_USER_DIR="Y"
+ALREADY_ASKED=0
+while [ "$CREATE_USER_DIR" == "Y" ]
+do
+  if [ "$ALREADY_ASKED" -eq "1" ]
+  then
+    DETERMINER="another"
+  else
+    DETERMINER="a"
+  fi
+
+  read -p "Do you want to create $DETERMINER /user/<uid> directories on HDFS? [Y|N] " CREATE_USER_DIR
+
+  case $CREATE_USER_DIR in
+    [Yy]* )
+      read -p "What is the user name? " USER_NAME
+      echo "Creating a /user directory for ${USER_NAME}"
+      sudo -u ${HADOOP_USER} hadoop fs -mkdir /user/${USER_NAME}
+      sudo -u ${HADOOP_USER} hadoop fs -chown ${USER_NAME} /user/${USER_NAME}
+      ;;  
+    [Nn]* )
+      echo "Not creating a /user dir, exiting . . . "
+      ;; 
+    * ) 
+      echo "Not creating a /user dir, exiting . . . "
+      ;; 
+  esac
+  
+  ALREADY_ASKED=1
+
+done
+
+#
+# start up mr-services again
+#
+hadoop-services -d mr -c start
+
